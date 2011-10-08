@@ -77,14 +77,19 @@ client = Stomp::Client.new options['broker']
 client.subscribe '/queue/bach' do |message|
   puts "Received #{message.headers['message-id']}"
 
-  options = JSON.parse message.body
-  results = Job.new(options).execute
+  begin
+    options = JSON.parse message.body
+    results = Job.new(options).execute
 
-  result_json = JSON.generate results
-  destination = message.headers['reply-to']
-  client.publish destination, result_json
+    result_json = JSON.generate results
+    destination = message.headers['reply-to']
+    client.publish destination, result_json
 
-  puts "Finished processing #{message.headers['message-id']}"
+    puts "Finished processing #{message.headers['message-id']}"
+  rescue => e
+    puts "Error processing #{message.headers['message-id']}:"
+    puts "\t" + [ e.message, *e.backtrace ].join("\n\t")
+  end
 end
 
 puts "Waiting for clients..."
