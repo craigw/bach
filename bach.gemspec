@@ -18,6 +18,7 @@ Gem::Specification.new do |s|
 
   s.add_dependency 'stomp'
   s.add_dependency 'espeak-ruby'
+  s.add_dependency 'json'
   s.requirements << 'A broker capable of talking Stomp'
   s.requirements << 'A server with Lame and eSpeak installed'
 end
