@@ -1,0 +1,91 @@
+#! /usr/bin/env ruby
+
+require 'stomp'
+require 'json'
+require 'base64'
+require 'getoptlong'
+require 'espeak-ruby'
+
+class Job
+  include ESpeak
+
+  def serial
+    @serial ||= random_id
+  end
+
+  def random_id
+    [ File.basename($0), Time.now.to_i, rand(1_000_000) ].join '-'
+  end
+
+  def working_directory
+    @working_directory ||= %x[mktemp -d -t #{serial}-XXXXXX].strip
+  end
+
+  def clean_up
+    %x[test -d "#{@working_directory}" && rm -rf "#{@working_directory}"]
+  end
+
+  def hostname
+    %x[hostname].strip
+  end
+
+  def temp_file_name ext = nil
+    File.join working_directory, "#{random_id}#{ext}"
+  end
+
+  attr_accessor :options
+  private :options, :options=
+
+  def initialize options
+    self.options = options
+  end
+
+  def execute
+    sanitize_options!
+    target = temp_file_name '.mp3'
+    espeak target, options
+    raw_data = File.read target
+    encoded_data = Base64.encode64 raw_data
+    {
+      :output => encoded_data,
+      :processor => {
+	:hostname => hostname,
+	:pid => Process.pid
+      }
+    }
+  ensure
+    clean_up
+  end
+
+  def sanitize_options!
+    return if @sanitized_options
+    options['text'] = Base64.decode64 options['text']
+    @sanitized_options = true
+  end
+end
+
+options = {}
+argv = GetoptLong.new(
+  [ "--broker", "-b", GetoptLong::OPTIONAL_ARGUMENT ]
+)
+argv.each do |option, value|
+  options['broker'] = value if option == '--broker'
+end
+options['broker'] ||= 'stomp://127.0.0.1:61613'
+
+client = Stomp::Client.new options['broker']
+client.subscribe '/queue/bach' do |message|
+  puts "Received #{message.headers['message-id']}"
+
+  options = JSON.parse message.body
+  results = Job.new(options).execute
+
+  result_json = JSON.generate results
+  destination = message.headers['reply-to']
+  client.publish destination, result_json
+
+  puts "Finished processing #{message.headers['message-id']}"
+end
+
+puts "Waiting for clients..."
+client.join

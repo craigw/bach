@@ -1,0 +1,35 @@
+#! /usr/bin/env ruby
+
+require 'base64'
+require 'stomp'
+require 'json'
+require "getoptlong"
+
+options = {}
+argv = GetoptLong.new(
+  [ "--broker", "-b", GetoptLong::OPTIONAL_ARGUMENT ]
+)
+argv.each do |option, value|
+  options['broker'] = value if option == '--broker'
+end
+options['broker'] ||= 'stomp://127.0.0.1:61613'
+
+text = ARGF.read
+encoded_text = Base64.encode64 text
+command = { text: encoded_text }
+command_json = JSON.generate command
+
+results = '/queue/bach.results-' + Process.pid.to_s + '-' + Time.now.to_i.to_s
+client = Stomp::Client.new options['broker']
+
+client.subscribe results, 'auto-delete' => true do |message|
+  results = JSON.parse message.body
+  encoded_output = results['output']
+  decoded_output = Base64.decode64 encoded_output
+  print decoded_output
+  client.close
+end
+
+client.publish '/queue/bach', command_json, 'reply-to' => results
+
+client.join
