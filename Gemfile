@@ -1,6 +1,7 @@
 source :gemcutter
 
 gem 'stomp'
+gem 'json'
 
 group :example do
   gem 'vagrant'
